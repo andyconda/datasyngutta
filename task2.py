@@ -323,8 +323,8 @@ if __name__ == "__main__":
         dataloaders
     )
     trainer.train()
-    print("Final Training Accuracy: ", trainer.TRAIN_ACC[-1])
-    print("Final Validation Accuracy: ", trainer.VALIDATION_ACC[-1])
-    print("Final Test Accuracy: ", trainer.TEST_ACC[-1])
+    print("Final Training Accuracy: ", list(trainer.TRAIN_ACC.values())[-1])
+    print("Final Validation Accuracy: ", list(trainer.VALIDATION_ACC.values())[-1])
+    print("Final Test Accuracy: ", list(trainer.TEST_ACC.values())[-1])
     create_plots(trainer, "task2")
 
