@@ -33,7 +33,7 @@ def compute_loss_and_accuracy(
     with torch.no_grad():  # No need to compute gradient when testing
         for (X_batch, Y_batch) in dataloader:
             # Forward pass the images through our model
-            X_batch, Y_batch = to_cuda([X_batch, Y_batch])
+            X_batch, Y_batch = utils.to_cuda([X_batch, Y_batch])
             output_probs = model(X_batch)
             # Compute loss
             loss = loss_criterion(output_probs, Y_batch)
@@ -69,7 +69,7 @@ class ExampleModel(nn.Module):
         num_filters = 32  # Set number of filters in first conv layer
         self.num_classes = num_classes
         self.num_hidden_nodes = 64
-        self.num_input_nodes_FC = 4 * 4 * 3 * 128
+        self.num_input_nodes_FC = 4 * 4 * 128
 
         # Define the convolutional layers
 
@@ -116,13 +116,13 @@ class ExampleModel(nn.Module):
         list = torch.empty((batch_size,4*4*128))
 
         out = x
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
+        out = self.layer1(out).cuda()
+        out = self.layer2(out).cuda()
+        out = self.layer3(out).cuda()
         for i in range(0,batch_size):
             list[i] = out[i].flatten()
-        out = list
-        out = self.classifier(out)
+        out = list.cuda()
+        out = self.classifier(out).cuda()
         expected_shape = (batch_size, self.num_classes)
         assert out.shape == (batch_size, self.num_classes),\
             f"Expected output of forward pass to be: {expected_shape}, but got: {out.shape}"
@@ -170,6 +170,7 @@ class Trainer:
         self.VALIDATION_LOSS = collections.OrderedDict()
         self.TEST_LOSS = collections.OrderedDict()
         self.TRAIN_LOSS = collections.OrderedDict()
+        self.TRAIN_ACC = collections.OrderedDict()
         self.VALIDATION_ACC = collections.OrderedDict()
         self.TEST_ACC = collections.OrderedDict()
 
@@ -200,6 +201,11 @@ class Trainer:
         )
         self.TEST_ACC[self.global_step] = test_acc
         self.TEST_LOSS[self.global_step] = test_loss
+        # Compute for training set
+        train_loss, train_acc = compute_loss_and_accuracy(
+            self.dataloader_train, self.model, self.loss_criterion)
+        self.TRAIN_ACC[self.global_step] = train_acc
+        self.TRAIN_LOSS[self.global_step] = train_loss
 
         self.model.train()
 
@@ -317,4 +323,8 @@ if __name__ == "__main__":
         dataloaders
     )
     trainer.train()
+    print("Final Training Accuracy: ", trainer.TRAIN_ACC[-1])
+    print("Final Validation Accuracy: ", trainer.VALIDATION_ACC[-1])
+    print("Final Test Accuracy: ", trainer.TEST_ACC[-1])
     create_plots(trainer, "task2")
+
