@@ -77,17 +77,23 @@ class ExampleModel(nn.Module):
         self.layer1 = torch.nn.Sequential(
             torch.nn.Conv2d(image_channels, num_filters, kernel_size=5, stride=1, padding=2),
             torch.nn.ReLU(),
+            torch.nn.Conv2d(num_filters, num_filters, kernel_size=5, stride=1, padding=2),
+            torch.nn.ReLU(),
             torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0))
 
         # Layer 2
         self.layer2 = torch.nn.Sequential(
             torch.nn.Conv2d(num_filters, 64, kernel_size=5, stride=1, padding=2),
             torch.nn.ReLU(),
+            torch.nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=2),
+            torch.nn.ReLU(),
             torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0))
 
         # Layer 3
         self.layer3 = torch.nn.Sequential(
             torch.nn.Conv2d(64, 128, kernel_size=5, stride=1, padding=2),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(128, 128, kernel_size=5, stride=1, padding=2),
             torch.nn.ReLU(),
             torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0))
 
@@ -113,7 +119,7 @@ class ExampleModel(nn.Module):
             x: Input image, shape: [batch_size, 3, 32, 32]
         """
         batch_size = x.shape[0]
-        list = torch.empty((batch_size,4*4*128))
+        list = torch.empty((batch_size, self.num_input_nodes_FC))
 
         out = x
         out = self.layer1(out).cuda()
@@ -155,7 +161,7 @@ class Trainer:
         print(self.model)
 
         # Define our optimizer. SGD = Stochastich Gradient Descent
-        self.optimizer = torch.optim.SGD(self.model.parameters(),
+        self.optimizer = torch.optim.Adam(self.model.parameters(),
                                          self.learning_rate)
 
         # Load our dataset
@@ -310,7 +316,7 @@ def create_plots(trainer: Trainer, name: str):
 if __name__ == "__main__":
     epochs = 10
     batch_size = 64
-    learning_rate = 5e-2
+    learning_rate = 5e-4
     early_stop_count = 4
     dataloaders = load_cifar10(batch_size)
     model = ExampleModel(image_channels=3, num_classes=10)
@@ -326,5 +332,5 @@ if __name__ == "__main__":
     print("Final Training Accuracy: ", list(trainer.TRAIN_ACC.values())[-1])
     print("Final Validation Accuracy: ", list(trainer.VALIDATION_ACC.values())[-1])
     print("Final Test Accuracy: ", list(trainer.TEST_ACC.values())[-1])
-    create_plots(trainer, "task2")
+    create_plots(trainer, "task3")
 
