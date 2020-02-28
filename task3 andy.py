@@ -72,7 +72,7 @@ class ExampleModel(nn.Module):
                 num_classes: Number of classes we want to predict (10)
         """
         super().__init__()
-        num_filters = 64  # Set number of filters in first conv layer
+        num_filters = 32  # Set number of filters in first conv layer
         self.num_classes = num_classes
         self.num_hidden_nodes = 64
         self.num_input_nodes_FC = 4 * 4 * num_filters*4
@@ -131,7 +131,7 @@ class ExampleModel(nn.Module):
             x: Input image, shape: [batch_size, 3, 32, 32]
         """
         batch_size = x.shape[0]
-        list = torch.empty((batch_size,4*4*256))
+        list = torch.empty((batch_size,self.num_input_nodes_FC))
 
         out = x
         out = self.layer1(out).cuda()
@@ -342,6 +342,7 @@ if __name__ == "__main__":
         dataloaders
     )
     trainer.train()
+    print("Final Training Loss: ", list(trainer.TRAIN_LOSS.values())[-1])
     print("Final Training Accuracy: ", list(trainer.TRAIN_ACC.values())[-1])
     print("Final Validation Accuracy: ", list(trainer.VALIDATION_ACC.values())[-1])
     print("Final Test Accuracy: ", list(trainer.TEST_ACC.values())[-1])
@@ -349,6 +350,7 @@ if __name__ == "__main__":
 
 
 # In[ ]:
+
 
 
 
