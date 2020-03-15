@@ -1,330 +1,259 @@
-import pathlib
+import numpy as np
 import matplotlib.pyplot as plt
-import torch
-import utils
-import time
-import typing
-import collections
-from torch import nn
-from dataloaders import load_cifar10
+import json
+import copy
+from tools import read_predicted_boxes, read_ground_truth_boxes
 
 
-def compute_loss_and_accuracy(
-        dataloader: torch.utils.data.DataLoader,
-        model: torch.nn.Module,
-        loss_criterion: torch.nn.modules.loss._Loss):
-    """
-    Computes the average loss and the accuracy over the whole dataset
-    in dataloader.
+def calculate_iou(prediction_box, gt_box):
+    """Calculate intersection over union of single predicted and ground truth box.
+
     Args:
-        dataloder: Validation/Test dataloader
-        model: torch.nn.Module
-        loss_criterion: The loss criterion, e.g: torch.nn.CrossEntropyLoss()
+        prediction_box (np.array of floats): location of predicted object as
+            [xmin, ymin, xmax, ymax]
+        gt_box (np.array of floats): location of ground truth object as
+            [xmin, ymin, xmax, ymax]
+
+        returns:
+            float: value of the intersection of union for the two boxes.
+    """
+    # YOUR CODE HERE
+
+    # Compute intersection
+    xmin = max([prediction_box[0], gt_box[0]])
+    xmax = min([prediction_box[2], gt_box[2]])
+    ymin = max([prediction_box[1], gt_box[1]])
+    ymax = min([prediction_box[3], gt_box[3]])
+
+    width = xmax - xmin
+    height = ymax - ymin
+
+    intersection = width * height
+
+    # Compute union
+    area_prediction = (prediction_box[2] - prediction_box[0]) * (prediction_box[3] - prediction_box[1])
+    area_gt = (gt_box[2] - gt_box[0]) * (gt_box[3] - gt_box[1])
+
+    union = area_gt + area_prediction - intersection
+
+    iou = intersection / union
+    assert iou >= 0 and iou <= 1
+    return iou
+
+
+def calculate_precision(num_tp, num_fp, num_fn):
+    """ Calculates the precision for the given parameters.
+        Returns 1 if num_tp + num_fp = 0
+
+    Args:
+        num_tp (float): number of true positives
+        num_fp (float): number of false positives
+        num_fn (float): number of false negatives
     Returns:
-        [average_loss, accuracy]: both scalar.
+        float: value of precision
+    """
+    raise NotImplementedError
+
+
+def calculate_recall(num_tp, num_fp, num_fn):
+    """ Calculates the recall for the given parameters.
+        Returns 0 if num_tp + num_fn = 0
+    Args:
+        num_tp (float): number of true positives
+        num_fp (float): number of false positives
+        num_fn (float): number of false negatives
+    Returns:
+        float: value of recall
+    """
+    raise NotImplementedError
+
+
+def get_all_box_matches(prediction_boxes, gt_boxes, iou_threshold):
+    """Finds all possible matches for the predicted boxes to the ground truth boxes.
+        No bounding box can have more than one match.
+
+        Remember: Matching of bounding boxes should be done with decreasing IoU order!
+
+    Args:
+        prediction_boxes: (np.array of floats): list of predicted bounding boxes
+            shape: [number of predicted boxes, 4].
+            Each row includes [xmin, xmax, ymin, ymax]
+        gt_boxes: (np.array of floats): list of bounding boxes ground truth
+            objects with shape: [number of ground truth boxes, 4].
+            Each row includes [xmin, xmax, ymin, ymax]
+    Returns the matched boxes (in corresponding order):
+        prediction_boxes: (np.array of floats): list of predicted bounding boxes
+            shape: [number of box matches, 4].
+        gt_boxes: (np.array of floats): list of bounding boxes ground truth
+            objects with shape: [number of box matches, 4].
+            Each row includes [xmin, xmax, ymin, ymax]
+    """
+    # Find all possible matches with a IoU >= iou threshold
+
+
+    # Sort all matches on IoU in descending order
+
+    # Find all matches with the highest IoU threshold
+
+
+    
+    return np.array([]), np.array([])
+
+
+def calculate_individual_image_result(prediction_boxes, gt_boxes, iou_threshold):
+    """Given a set of prediction boxes and ground truth boxes,
+       calculates true positives, false positives and false negatives
+       for a single image.
+       NB: prediction_boxes and gt_boxes are not matched!
+
+    Args:
+        prediction_boxes: (np.array of floats): list of predicted bounding boxes
+            shape: [number of predicted boxes, 4].
+            Each row includes [xmin, xmax, ymin, ymax]
+        gt_boxes: (np.array of floats): list of bounding boxes ground truth
+            objects with shape: [number of ground truth boxes, 4].
+            Each row includes [xmin, xmax, ymin, ymax]
+    Returns:
+        dict: containing true positives, false positives, true negatives, false negatives
+            {"true_pos": int, "false_pos": int, false_neg": int}
     """
 
-    # Tracking variables
-    loss_avg = 0
-    total_correct = 0
-    total_images = 0
-    total_steps = 0
-
-    with torch.no_grad():  # No need to compute gradient when testing
-        for (X_batch, Y_batch) in dataloader:
-            # Forward pass the images through our model
-            X_batch, Y_batch = utils.to_cuda([X_batch, Y_batch])
-            output_probs = model(X_batch)
-            # Compute loss
-            loss = loss_criterion(output_probs, Y_batch)
-
-            # Predicted class is the max index over the column dimension
-            predictions = output_probs.argmax(dim=1).squeeze()
-            Y_batch = Y_batch.squeeze()
-
-            # Update tracking variables
-            loss_avg += loss.cpu().item()
-            total_steps += 1
-            total_correct += (predictions == Y_batch).cpu().sum().item()
-            total_images += predictions.shape[0]
-    model.train()
-    loss_avg = loss_avg / total_steps
-    accuracy = total_correct / total_images
-
-    return loss_avg, accuracy
+    raise NotImplementedError
 
 
-class ExampleModel(nn.Module):
+def calculate_precision_recall_all_images(
+    all_prediction_boxes, all_gt_boxes, iou_threshold):
+    """Given a set of prediction boxes and ground truth boxes for all images,
+       calculates recall and precision over all images
+       for a single image.
+       NB: all_prediction_boxes and all_gt_boxes are not matched!
 
-    def __init__(self,
-                 image_channels,
-                 num_classes):
-        """
-            Is called when model is initialized.
-            Args:
-                image_channels. Number of color channels in image (3)
-                num_classes: Number of classes we want to predict (10)
-        """
-        super().__init__()
-        num_filters = 32  # Set number of filters in first conv layer
-        self.num_classes = num_classes
-        self.num_hidden_nodes = 64
-        self.num_input_nodes_FC = 4 * 4 * 128
-
-        # Define the convolutional layers
-
-        # Layer 1
-        self.layer1 = torch.nn.Sequential(
-            torch.nn.Conv2d(image_channels, num_filters, kernel_size=5, stride=1, padding=2),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0))
-
-        # Layer 2
-        self.layer2 = torch.nn.Sequential(
-            torch.nn.Conv2d(num_filters, 64, kernel_size=5, stride=1, padding=2),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0))
-
-        # Layer 3
-        self.layer3 = torch.nn.Sequential(
-            torch.nn.Conv2d(64, 128, kernel_size=5, stride=1, padding=2),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0))
-
-        # Layer 4 and 5
-        self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(self.num_input_nodes_FC, self.num_hidden_nodes),
-            torch.nn.ReLU(),
-            torch.nn.Linear(self.num_hidden_nodes, self.num_classes))
-
-        # The output of feature_extractor will be [batch_size, num_filters, 16, 16]
-        self.num_output_features = 3*32*32
-        # Initialize our last fully connected layer
-        # Inputs all extracted features from the convolutional layers
-        # Outputs num_classes predictions, 1 for each class.
-        # There is no need for softmax activation function, as this is
-        # included with nn.CrossEntropyLoss
+    Args:
+        all_prediction_boxes: (list of np.array of floats): each element in the list
+            is a np.array containing all predicted bounding boxes for the given image
+            with shape: [number of predicted boxes, 4].
+            Each row includes [xmin, xmax, ymin, ymax]
+        all_gt_boxes: (list of np.array of floats): each element in the list
+            is a np.array containing all ground truth bounding boxes for the given image
+            objects with shape: [number of ground truth boxes, 4].
+            Each row includes [xmin, xmax, ymin, ymax]
+    Returns:
+        tuple: (precision, recall). Both float.
+    """
+    raise NotImplementedError
 
 
-    def forward(self, x):
-        """
-        Performs a forward pass through the model
-        Args:
-            x: Input image, shape: [batch_size, 3, 32, 32]
-        """
-        batch_size = x.shape[0]
-        list = torch.empty((batch_size,4*4*128))
+def get_precision_recall_curve(
+    all_prediction_boxes, all_gt_boxes, confidence_scores, iou_threshold
+):
+    """Given a set of prediction boxes and ground truth boxes for all images,
+       calculates the recall-precision curve over all images.
+       for a single image.
 
-        out = x
-        out = self.layer1(out).cuda()
-        out = self.layer2(out).cuda()
-        out = self.layer3(out).cuda()
-        for i in range(0,batch_size):
-            list[i] = out[i].flatten()
-        out = list.cuda()
-        out = self.classifier(out).cuda()
-        expected_shape = (batch_size, self.num_classes)
-        assert out.shape == (batch_size, self.num_classes),\
-            f"Expected output of forward pass to be: {expected_shape}, but got: {out.shape}"
-        return out
+       NB: all_prediction_boxes and all_gt_boxes are not matched!
 
+    Args:
+        all_prediction_boxes: (list of np.array of floats): each element in the list
+            is a np.array containing all predicted bounding boxes for the given image
+            with shape: [number of predicted boxes, 4].
+            Each row includes [xmin, xmax, ymin, ymax]
+        all_gt_boxes: (list of np.array of floats): each element in the list
+            is a np.array containing all ground truth bounding boxes for the given image
+            objects with shape: [number of ground truth boxes, 4].
+            Each row includes [xmin, xmax, ymin, ymax]
+        scores: (list of np.array of floats): each element in the list
+            is a np.array containting the confidence score for each of the
+            predicted bounding box. Shape: [number of predicted boxes]
 
-class Trainer:
+            E.g: score[0][1] is the confidence score for a predicted bounding box 1 in image 0.
+    Returns:
+        tuple: (precision, recall). Both float.
+    """
+    # Instead of going over every possible confidence score threshold to compute the PR
+    # curve, we will use an approximation
+    confidence_thresholds = np.linspace(0, 1, 500)
+    # YOUR CODE HERE
 
-    def __init__(self,
-                 batch_size: int,
-                 learning_rate: float,
-                 early_stop_count: int,
-                 epochs: int,
-                 model: torch.nn.Module,
-                 dataloaders: typing.List[torch.utils.data.DataLoader]):
-        """
-            Initialize our trainer class.
-        """
-        self.batch_size = batch_size
-        self.learning_rate = learning_rate
-        self.early_stop_count = early_stop_count
-        self.epochs = epochs
-
-        # Since we are doing multi-class classification, we use CrossEntropyLoss
-        self.loss_criterion = nn.CrossEntropyLoss()
-        # Initialize the model
-        self.model = model
-        # Transfer model to GPU VRAM, if possible.
-        self.model = utils.to_cuda(self.model)
-        print(self.model)
-
-        # Define our optimizer. SGD = Stochastich Gradient Descent
-        self.optimizer = torch.optim.SGD(self.model.parameters(),
-                                         self.learning_rate)
-
-        # Load our dataset
-        self.dataloader_train, self.dataloader_val, self.dataloader_test = dataloaders
-
-        # Validate our model everytime we pass through 50% of the dataset
-        self.num_steps_per_val = len(self.dataloader_train) // 2
-        self.global_step = 0
-        self.start_time = time.time()
-
-        # Tracking variables
-        self.VALIDATION_LOSS = collections.OrderedDict()
-        self.TEST_LOSS = collections.OrderedDict()
-        self.TRAIN_LOSS = collections.OrderedDict()
-        self.TRAIN_ACC = collections.OrderedDict()
-        self.VALIDATION_ACC = collections.OrderedDict()
-        self.TEST_ACC = collections.OrderedDict()
-
-        self.checkpoint_dir = pathlib.Path("checkpoints")
-
-    def validation_epoch(self):
-        """
-            Computes the loss/accuracy for all three datasets.
-            Train, validation and test.
-        """
-        self.model.eval()
-        validation_loss, validation_acc = compute_loss_and_accuracy(
-            self.dataloader_val, self.model, self.loss_criterion
-        )
-        self.VALIDATION_ACC[self.global_step] = validation_acc
-        self.VALIDATION_LOSS[self.global_step] = validation_loss
-        used_time = time.time() - self.start_time
-        print(
-            f"Epoch: {self.epoch:>2}",
-            f"Batches per seconds: {self.global_step / used_time:.2f}",
-            f"Global step: {self.global_step:>6}",
-            f"Validation Loss: {validation_loss:.2f},",
-            f"Validation Accuracy: {validation_acc:.3f}",
-            sep="\t")
-        # Compute for testing set
-        test_loss, test_acc = compute_loss_and_accuracy(
-            self.dataloader_test, self.model, self.loss_criterion
-        )
-        self.TEST_ACC[self.global_step] = test_acc
-        self.TEST_LOSS[self.global_step] = test_loss
-        # Compute for training set
-        train_loss, train_acc = compute_loss_and_accuracy(
-            self.dataloader_train, self.model, self.loss_criterion)
-        self.TRAIN_ACC[self.global_step] = train_acc
-        self.TRAIN_LOSS[self.global_step] = train_loss
-
-        self.model.train()
-
-    def should_early_stop(self):
-        """
-            Checks if validation loss doesn't improve over early_stop_count epochs.
-        """
-        # Check if we have more than early_stop_count elements in our validation_loss list.
-        if len(self.VALIDATION_LOSS) < self.early_stop_count:
-            return False
-        # We only care about the last [early_stop_count] losses.
-        relevant_loss = list(self.VALIDATION_LOSS.values())[-self.early_stop_count:]
-        first_loss = relevant_loss[0]
-        if first_loss == min(relevant_loss):
-            print("Early stop criteria met")
-            return True
-        return False
-
-    def train(self):
-        """
-        Trains the model for [self.epochs] epochs.
-        """
-        # Track initial loss/accuracy
-        def should_validate_model():
-            return self.global_step % self.num_steps_per_val == 0
-
-        for epoch in range(self.epochs):
-            self.epoch = epoch
-            # Perform a full pass through all the training samples
-            for X_batch, Y_batch in self.dataloader_train:
-                # X_batch is the CIFAR10 images. Shape: [batch_size, 3, 32, 32]
-                # Y_batch is the CIFAR10 image label. Shape: [batch_size]
-                # Transfer images / labels to GPU VRAM, if possible
-                X_batch = utils.to_cuda(X_batch)
-                Y_batch = utils.to_cuda(Y_batch)
-
-                # Perform the forward pass
-                predictions = self.model(X_batch)
-                # Compute the cross entropy loss for the batch
-                loss = self.loss_criterion(predictions, Y_batch)
-                self.TRAIN_LOSS[self.global_step] = loss.detach().cpu().item()
-
-                # Backpropagation
-                loss.backward()
-
-                # Gradient descent step
-                self.optimizer.step()
-
-                # Reset all computed gradients to 0
-                self.optimizer.zero_grad()
-                self.global_step += 1
-                 # Compute loss/accuracy for all three datasets.
-                if should_validate_model():
-                    self.validation_epoch()
-                    self.save_model()
-                    if self.should_early_stop():
-                        print("Early stopping.")
-                        return
-
-    def save_model(self):
-        def is_best_model():
-            """
-                Returns True if current model has the lowest validation loss
-            """
-            validation_losses = list(self.VALIDATION_LOSS.values())
-            return validation_losses[-1] == min(validation_losses)
-
-        state_dict = self.model.state_dict()
-        filepath = self.checkpoint_dir.joinpath(f"{self.global_step}.ckpt")
-
-        utils.save_checkpoint(state_dict, filepath, is_best_model())
-
-    def load_best_model(self):
-        state_dict = utils.load_best_checkpoint(self.checkpoint_dir)
-        if state_dict is None:
-            print(
-                f"Could not load best checkpoint. Did not find under: {self.checkpoint_dir}")
-            return
-        self.model.load_state_dict(state_dict)
+    precisions = [] 
+    recalls = []
+    return np.array(precisions), np.array(recalls)
 
 
-def create_plots(trainer: Trainer, name: str):
-    plot_path = pathlib.Path("plots")
-    plot_path.mkdir(exist_ok=True)
-    # Save plots and show them
-    plt.figure(figsize=(20, 8))
-    plt.subplot(1, 2, 1)
-    plt.title("Cross Entropy Loss")
-    utils.plot_loss(trainer.TRAIN_LOSS, label="Training loss")
-    utils.plot_loss(trainer.VALIDATION_LOSS, label="Validation loss")
-    utils.plot_loss(trainer.TEST_LOSS, label="Testing Loss")
-    plt.legend()
-    plt.subplot(1, 2, 2)
-    plt.title("Accuracy")
-    utils.plot_loss(trainer.VALIDATION_ACC, label="Validation Accuracy")
-    utils.plot_loss(trainer.TEST_ACC, label="Testing Accuracy")
-    plt.legend()
-    plt.savefig(plot_path.joinpath(f"{name}_plot.png"))
-    plt.show()
+def plot_precision_recall_curve(precisions, recalls):
+    """Plots the precision recall curve.
+        Save the figure to precision_recall_curve.png:
+        'plt.savefig("precision_recall_curve.png")'
+
+    Args:
+        precisions: (np.array of floats) length of N
+        recalls: (np.array of floats) length of N
+    Returns:
+        None
+    """
+    plt.figure(figsize=(20, 20))
+    plt.plot(recalls, precisions)
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.xlim([0.8, 1.0])
+    plt.ylim([0.8, 1.0])
+    plt.savefig("precision_recall_curve.png")
+
+
+def calculate_mean_average_precision(precisions, recalls):
+    """ Given a precision recall curve, calculates the mean average
+        precision.
+
+    Args:
+        precisions: (np.array of floats) length of N
+        recalls: (np.array of floats) length of N
+    Returns:
+        float: mean average precision
+    """
+    # Calculate the mean average precision given these recall levels.
+    recall_levels = np.linspace(0, 1.0, 11)
+    # YOUR CODE HERE
+    average_precision = 0
+    return average_precision
+
+
+def mean_average_precision(ground_truth_boxes, predicted_boxes):
+    """ Calculates the mean average precision over the given dataset
+        with IoU threshold of 0.5
+
+    Args:
+        ground_truth_boxes: (dict)
+        {
+            "img_id1": (np.array of float). Shape [number of GT boxes, 4]
+        }
+        predicted_boxes: (dict)
+        {
+            "img_id1": {
+                "boxes": (np.array of float). Shape: [number of pred boxes, 4],
+                "scores": (np.array of float). Shape: [number of pred boxes]
+            }
+        }
+    """
+    # DO NOT EDIT THIS CODE
+    all_gt_boxes = []
+    all_prediction_boxes = []
+    confidence_scores = []
+
+    for image_id in ground_truth_boxes.keys():
+        pred_boxes = predicted_boxes[image_id]["boxes"]
+        scores = predicted_boxes[image_id]["scores"]
+
+        all_gt_boxes.append(ground_truth_boxes[image_id])
+        all_prediction_boxes.append(pred_boxes)
+        confidence_scores.append(scores)
+
+    precisions, recalls = get_precision_recall_curve(
+        all_prediction_boxes, all_gt_boxes, confidence_scores, 0.5)
+    plot_precision_recall_curve(precisions, recalls)
+    mean_average_precision = calculate_mean_average_precision(precisions, recalls)
+    print("Mean average precision: {:.4f}".format(mean_average_precision))
 
 
 if __name__ == "__main__":
-    epochs = 10
-    batch_size = 64
-    learning_rate = 5e-2
-    early_stop_count = 4
-    dataloaders = load_cifar10(batch_size)
-    model = ExampleModel(image_channels=3, num_classes=10)
-    trainer = Trainer(
-        batch_size,
-        learning_rate,
-        early_stop_count,
-        epochs,
-        model,
-        dataloaders
-    )
-    trainer.train()
-    print("Final Training Accuracy: ", list(trainer.TRAIN_ACC.values())[-1])
-    print("Final Validation Accuracy: ", list(trainer.VALIDATION_ACC.values())[-1])
-    print("Final Test Accuracy: ", list(trainer.TEST_ACC.values())[-1])
-    create_plots(trainer, "task2")
-
+    ground_truth_boxes = read_ground_truth_boxes()
+    predicted_boxes = read_predicted_boxes()
+    mean_average_precision(ground_truth_boxes, predicted_boxes)
